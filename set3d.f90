@@ -2,11 +2,11 @@ PROGRAM set3d
 
 !*************************************************************************************!
 !
-! Min/Max Level Set Solver
+! Min/Max Level Set Solver and Strand Grid Mesher
 !
 ! Author: Oisin Tong
 !
-! Version: 3.0  
+! Version: 1.0  
 !
 ! Date: 28/6/2016
 !
