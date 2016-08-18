@@ -2,11 +2,11 @@ PROGRAM set3d
 
 !*************************************************************************************!
 !
-! Min/Max Level Set Solver and Strand Grid Mesher
+! Min/Max Level Set Solver
 !
 ! Author: Oisin Tong
 !
-! Version: 1.0  
+! Version: 3.0  
 !
 ! Date: 28/6/2016
 !
@@ -24,6 +24,7 @@ IMPLICIT NONE
 
 INTEGER :: j,sUnit,nbytePhi,offset,nxs,n1,n2,n3,fN,im,jm,km,ip,jp,kp,dd,nBndElem,iu
 INTEGER :: iter,nx,ny,nz,qG,nn,counter,orderUp,order1,order2,reIter,order,nBndComp
+INTEGER :: ord,nsp,nSurfNodeO
 REAL :: a0,a1,a2,a3,a4,t,xLo(3),xHi(3),xs,ys,yp,ypp,g,gp,x0,x1,dxs,dPlus,dMinus
 REAL :: pX1,pX2,pX3,pY1,pY2,pY3,pZ1,pZ2,pZ3,gX,gY,gZ,dis,minD,k1,h1,k2,k3,k4,t5
 REAL :: B1,B2,B3,C1,C2,C3,pSx,pSy,pSz,pS,pX,pY,pZ,sgn,ddx,ddy,ddz,gM,phiErrS
@@ -34,15 +35,19 @@ REAL :: aaa,bbb,ccc,ax1,ax2,ay1,ay2,az1,az2,Dijk,Fx,Fy,Fz,rTime,surfErr
 REAL,ALLOCATABLE,DIMENSION(:,:,:) :: phi,phiS,phiN,gradPhiMag,phiE,phi1,phi2,phi3,phiO
 REAL,ALLOCATABLE,DIMENSION(:,:,:) :: S,curv,Fcurv
 INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: phiSB,phiNB
-REAL,ALLOCATABLE,DIMENSION(:) :: curvSurf
-REAL,ALLOCATABLE,DIMENSION(:,:) :: centroid,surfX,bndNormal,gradPhiSurf,surfXN,surfXO
+REAL,ALLOCATABLE,DIMENSION(:) :: curvSurf,phiSurf
+REAL,ALLOCATABLE,DIMENSION(:,:) :: centroid,surfX,surfXX,bndNormal,gradPhiSurf,surfXN,surfXO
 CHARACTER(LEN=1) :: lf=char(10)
 CHARACTER(LEN=1024) :: extent,origin,spacing,coffset
-INTEGER*4,ALLOCATABLE,DIMENSION(:,:) :: surfElem
+INTEGER*4,ALLOCATABLE,DIMENSION(:,:) :: surfElem,surfElemHO
 INTEGER,ALLOCATABLE,DIMENSION(:) :: surfElemTag,surfOrder
 CHARACTER :: filename*80,meshname*80,endname*80,filetype*80
 INTEGER*4 :: nSurfNode,k,i,n,p,kk,share,nSurfElem,length
 REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: gridX,grad2Phi,gradMixPhi,gradPhi
+REAL :: xc,ri,si
+REAL,DIMENSION(3) :: xl1,xl2,xl3
+REAL,ALLOCATABLE,DIMENSION(:,:) :: rs,xsp
+
 
 !*************************************************************************************!
 ! Set Initialization and Import Data
@@ -137,7 +142,7 @@ ddy = maxY-minY
 ddz = maxZ-minZ
 
 ! set dx
-dx = 0.025
+dx = 0.05
 
 ! define Cartesian grid
 nx = ceiling((maxX-minX)/dx)+1;
@@ -301,7 +306,7 @@ iter = 10000 !1500 ! 10000
 dxx = dx/sqrt(ddx*ddx+ddy*ddy+ddz*ddz)
 
 ! time step
-CFL = 1.
+CFL = .1
 h = CFL*dxx
 
 
@@ -364,7 +369,6 @@ CALL narrowBand(nx,ny,nz,dx,phi,phiNB,phiSB)
 !*************************************************************************************!
 
 ALLOCATE(curvSurf(nSurfNode))
-ALLOCATE(gradPhiSurf(nSurfNode,3))
 ALLOCATE(curv(0:nx,0:ny,0:nz))
 ALLOCATE(grad2Phi(0:nx,0:ny,0:nz,3))
 ALLOCATE(gradMixPhi(0:nx,0:ny,0:nz,3))
@@ -421,26 +425,16 @@ DO n = 1,iter
                CALL minMax(i,j,k,nx,ny,nz,dx,phi,grad2Phi,gradMixPhi,F,gridX)
                CALL weno(gM,i,j,k,nx,ny,nz,dx,phi,gradPhi,gradPhiMag)
                k1 = F  
-               curv(i,j,k) = F/gM
-               IF (gM < 1.E-13) curv(i,j,k) = 0
                phi(i,j,k) = phi(i,j,k) + h1*k1
             END IF
-
          END DO
       END DO
-   END DO
-
-   CALL setSurfCurv(xLo,nx,ny,nz,dx,curvSurf,curv,nSurfNode,surfX,gradPhiSurf,gradPhi)
-
-   DO k = 1,nSurfNode
-         surfXN(k,:) = surfX(k,:) + h1*curvSurf(k)*gradPhiSurf(k,:)
    END DO
  
 
    !********************************* RMS ***************************************!
 
    phiErr = 0.
-   surfErr = 0.
 
    ! calculate RMS
    DO i = 0,nx
@@ -450,35 +444,66 @@ DO n = 1,iter
          END DO
       END DO
    END DO
-  
-   ! calculate RMS
-   DO k = 1,nSurfNode  
-      DO p = 1,3         
-         surfErr = surfErr + (surfX(k,p)-surfXN(k,p))*(surfX(k,p)-surfXN(k,p))
-      END DO
-   END DO
      
    ! check error
    phiErr = sqrt(phiErr/(nx*ny*nz))
-   surfErr = sqrt(surfErr/nSurfNode)
-   IF ((phiErr < 1.E-7).AND.(surfErr < 1.E-7)) THEN
+   IF (phiErr < 1.E-7) THEN
       PRINT*, " Min/max time integration has reached steady state "
       EXIT
    END IF
    
    ! set phi to new value
    phiN = phi
-   surfX = surfXN
    
-   PRINT*, " Iteration: ",n," ", " RMS Error: ",phiErr, " Surface RMS Error: ",surfErr
-  
+   PRINT*, " Iteration: ",n," ", " RMS Error: ",phiErr  
    ! check for a NAN
    IF (isnan(phiErr)) STOP
 
    CALL narrowBand(nx,ny,nz,dx,phi,phiNB,phiSB)
 
 END DO
-print*,
+PRINT*,
+
+!*************************************************************************************!
+! Advect Nodes
+!*************************************************************************************!
+
+PRINT*, " Advecting first order surface nodes "
+PRINT*,
+
+order1 = 8
+DO i = 0,nx
+   DO j = 0,ny
+      DO k = 0,nz
+         IF (phiSB(i,j,k) == 1) THEN 
+            !CALL weno(gM,i,j,k,nx,ny,nz,dx,phi,gradPhi,gradPhiMag)
+            CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
+         END IF
+      END DO
+   END DO
+END DO
+
+ALLOCATE(phiSurf(nSurfNode))
+ALLOCATE(surfXX(nSurfNode,3))
+phiSurf = 0.
+
+surfXX = surfX
+
+ALLOCATE(gradPhiSurf(nSurfNode,3))
+CALL setPhiSurf(xLo,nx,ny,nz,dx,phiSurf,phi,nSurfNode,surfXX,gradPhiSurf,gradPhi)
+
+iter = 1000
+
+DO k = 1,iter
+   DO n = 1,nSurfNode
+      IF (abs(phiSurf(n)) > 1.E-13) THEN
+         surfXX(n,:) = surfXX(n,:) + 0.1*phiSurf(n)*gradPhiSurf(n,:)
+         CALL setPhiSurf(xLo,nx,ny,nz,dx,phiSurf,phi,nSurfNode,surfXX,gradPhiSurf,gradPhi)
+      END IF
+   END DO
+END DO
+
+surfX = surfXX
 
 !*************************************************************************************!
 ! Asymptotic Error
@@ -498,21 +523,22 @@ END DO
 phiErr = sqrt(phiErr/(nx*ny*nz))
 
 PRINT*, " Asymptotic Error: ",phiErr
+PRINT*,
 
 !*************************************************************************************!
 ! Output Grad Phi Mag
 !*************************************************************************************!
 
 ! grad phi
-order1 = 2
-DO i = 0,nx
-   DO j = 0,ny
-      DO k = 0,nz
-         CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
-         gradPhiMag(i,j,k) = gM
-      END DO
-   END DO
-END DO
+!order1 = 2
+!DO i = 0,nx
+!   DO j = 0,ny
+!      DO k = 0,nz
+!         CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
+!         gradPhiMag(i,j,k) = gM
+!      END DO
+!   END DO
+!END DO
 
 !*************************************************************************************!
 ! Paraview Output
@@ -560,14 +586,9 @@ h = CFL*dxx
 
 CALL reinit(phi,gradPhi,gradPhiMag,nx,ny,nz,iter,dx,h)
 
-!*************************************************************************************!
-! Strand Generation
-!*************************************************************************************!
-
-! Robbie, add your strand generation stuff here.
 
 !*************************************************************************************!
-! Print Out .S3D Format
+! Set to 0-based
 !*************************************************************************************!
 
 ! Set array to 0-based
@@ -578,6 +599,181 @@ DO k = 1,nSurfElem
    END DO
 END DO
 
+
+!*************************************************************************************!
+! Find location of high order nodes and set arrays
+!*************************************************************************************!
+
+PRINT*, " Allocating higher-order elements data "
+PRINT*,
+
+! deallocate so we can use these both again 
+DEALLOCATE(surfXN)
+DEALLOCATE(surfXX)
+DEALLOCATE(phiSurf)
+DEALLOCATE(gradPhiSurf)
+
+! allocate surfX
+ALLOCATE(surfXN(nSurfNode*100,3))
+
+! allocate the first order parts to the new surfX array
+DO n=1,nSurfNode
+   DO i=1,3
+      surfXN(n,i) = surfX(n,i)
+   END DO
+END DO 
+
+! set orginal surface node number
+nSurfNodeO = nSurfNode
+
+! element order
+ord = 1
+nsp = (ord+1)*(ord+2)/2
+
+! allocate the first order parts of the surfElem array
+ALLOCATE(surfELemHO(nSurfElem,nsp))
+DO n=1,nSurfElem
+   DO i = 1,3
+      surfElemHO(n,i) = surfElem(n,i)
+   END DO
+   surfOrder(n) = ord 
+END DO 
+
+
+! obtain equally spaced (r,s) locations in standard element
+ALLOCATE(rs(2,nsp))
+ALLOCATE(xsp(3,nsp))
+CALL equiTriPts(ord,nsp,rs)
+
+! set high-order elements 
+IF (ord > 1) THEN
+   DO n=1,nSurfElem
+
+      n1     = surfElemHO(n,1)+1
+      n2     = surfElemHO(n,2)+1
+      n3     = surfElemHO(n,3)+1
+   
+      xl1(1) = surfXN(n1,1)
+      xl1(2) = surfXN(n1,2)
+      xl1(3) = surfXN(n1,3)
+   
+      xl2(1) = surfXN(n2,1)
+      xl2(2) = surfXN(n2,2)
+      xl2(3) = surfXN(n2,3)
+    
+      xl3(1) = surfXN(n3,1)
+      xl3(2) = surfXN(n3,2)
+      xl3(3) = surfXN(n3,3)
+
+      ! straight portion
+      DO i=1,nsp 
+         ri       = rs(1,i)
+         si       = rs(2,i)
+         xsp(:,i) =((-3.*ri+2.-SQRT(3.)*si)*xl1(:) &
+                  + ( 3.*ri+2.-SQRT(3.)*si)*xl2(:) &
+                  + (2.+2.*SQRT(3.)*si)*xl3(:))/6.
+      END DO
+
+      !see if node has already been added in another element
+      k = nSurfNode 
+      DO i=4,nsp
+         share = 0
+         DO kk = 1,nSurfNode
+            IF ((surfXN(kk,1) == xsp(1,i)) .AND. &
+                (surfXN(kk,2) == xsp(2,i)) .AND. &
+                (surfXN(kk,3) == xsp(3,i))) THEN
+               share = kk
+               EXIT
+            END IF
+         END DO
+         IF (share > 0) THEN
+            surfElemHO(n,i) = share-1
+         ELSE
+            k             = k+1
+            surfXN(k,:)   = xsp(:,i)
+            surfElemHO(n,i) = k-1 !0-based
+         END IF
+      END DO
+      nSurfNode = k
+   END DO
+END IF
+
+!*************************************************************************************!
+! Advect nodes to phi = 0 to create curved boundary
+!*************************************************************************************!
+
+PRINT*, " Advecting higher-order surface nodes "
+PRINT*,
+
+ALLOCATE(surfXX(nSurfNode,3))
+ALLOCATE(phiSurf(nSurfNode))
+ALLOCATE(gradPhiSurf(nSurfNode,3))
+
+gradPhiSurf = 0.
+phiSurf = 0.
+
+! allocate to the new surfX array
+DO n=1,nSurfNode
+   DO i=1,3
+      surfXX(n,i) = surfXN(n,i)
+   END DO
+END DO 
+
+
+CALL narrowBand(nx,ny,nz,dx,phi,phiNB,phiSB)
+
+order1 = 8
+DO i = 0,nx
+   DO j = 0,ny
+      DO k = 0,nz
+         IF (phiSB(i,j,k) == 1) THEN 
+            CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
+         END IF
+      END DO
+   END DO
+END DO
+
+
+! interpolate phi and gradPhi data
+CALL setPhiSurf(xLo,nx,ny,nz,dx,phiSurf,phi,nSurfNode,surfXX,gradPhiSurf,gradPhi)
+
+! advect nodes
+IF (ord > 1) THEN
+   iter = 1000
+
+   DO k = 1,iter
+      DO n = nSurfNodeO,nSurfNode
+         IF (abs(phiSurf(n)) > 1.E-13) THEN
+            surfXX(n,:) = surfXX(n,:) + 0.1*phiSurf(n)*gradPhiSurf(n,:)
+            CALL setPhiSurf(xLo,nx,ny,nz,dx,phiSurf,phi,nSurfNode,surfXX,gradPhiSurf,gradPhi)
+         END IF
+      END DO
+   END DO
+END IF
+
+DEALLOCATE(surfX)
+ALLOCATE(surfX(nSurfNode,3))
+
+surfX = surfXX
+
+DO n=1,nSurfNode
+   print*,phiSurf(n)
+END DO
+
+
+!*************************************************************************************!
+! Strand Generation
+!*************************************************************************************!
+
+! Robbie, add your strand generation stuff here.
+
+PRINT*, " Generating strand grid volume mesh "
+PRINT*,
+
+!*************************************************************************************!
+! Print Out .S3D Format
+!*************************************************************************************!
+
 iu = 14
 
 ! write to mesh file
@@ -585,17 +781,17 @@ iu = 14
 OPEN(iu,FILE=meshname,STATUS='replace',FORM='formatted')
 WRITE(iu,*)nSurfElem,nSurfNode,nBndElem,nBndComp
 DO k=1,nSurfElem
-   WRITE(iu,*)surfOrder(k),surfElem(k,:),surfElemTag(k)
+   WRITE(iu,*)surfOrder(k),surfElemHO(k,:),surfElemTag(k)
 END DO
 DO n=1,nSurfNode
-   WRITE(iu,*)surfXN(n,:)
+   WRITE(iu,*)surfX(n,:)
 END DO
 DO n=1,nBndComp
    WRITE(iu,*)bndNormal(n,:)
 END DO
 CLOSE(iu)
 
-WRITE(*,'(A,A)')  'Successfully wrote: ', filename
+WRITE(*,'(A,A)')  'Successfully wrote: ', meshname
 
 !*************************************************************************************!
 ! Deallocate
@@ -623,6 +819,7 @@ DEALLOCATE(phi, &
            surfX, &
            surfXO, &
            surfXN, &
+           surfXX, &
            gridX, &
            centroid )
 

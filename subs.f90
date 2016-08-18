@@ -1050,6 +1050,223 @@ END DO
 END SUBROUTINE setSurfCurv
 
 !*************************************************************************************!
+! Trilinear interpolation for phi
+!*************************************************************************************!
+
+SUBROUTINE setPhiSurf(xLo,nx,ny,nz,dx,phiSurf,phi,nSurfNode,surfX,gradPhiSurf,gradPhi)
+
+INTEGER,INTENT(IN) :: nSurfNode,nx,ny,nz
+REAL,INTENT(IN) :: dx
+REAL,DIMENSION(3),INTENT(IN) :: xLo
+REAL,DIMENSION(0:nx,0:ny,0:nz),INTENT(IN) :: phi
+REAL,DIMENSION(0:nx,0:ny,0:nz,3),INTENT(IN) :: gradPhi
+REAL,DIMENSION(nSurfNode),INTENT(INOUT) :: phiSurf
+REAL,DIMENSION(nSurfNode,3),INTENT(IN) :: surfX
+REAL,DIMENSION(nSurfNode,3),INTENT(OUT) :: gradPhiSurf
+INTEGER :: n,i1,j1,k1,i0,j0,k0
+REAL :: x,y,z,xd,yd,zd,c00,c10,c01,c11,c0,c1,x1,y1,z1,x0,y0,z0
+REAL :: gradPhiMag,gradMag2,minX,minY,minZ
+
+minX = xLo(1)
+minY = xLo(2)
+minZ = xLo(3)
+
+
+DO n = 1,nSurfNode
+
+   x = surfX(n,1)
+   y = surfX(n,2)
+   z = surfX(n,3)
+
+   i0 = floor((x-minX)/dx)
+   j0 = floor((y-minY)/dx)
+   k0 = floor((z-minZ)/dx)
+
+   x0 = i0*dx + minX
+   y0 = j0*dx + minY
+   z0 = k0*dx + minZ
+
+   i1 = i0+1
+   j1 = j0+1
+   k1 = k0+1
+
+   x1 = i1*dx + minX
+   y1 = j1*dx + minY
+   z1 = k1*dx + minZ
+
+   xd = (x-x0)/(x1-x0)
+   yd = (y-y0)/(y1-y0)
+   zd = (z-z0)/(z1-z0)
+
+   c00 = phi(i0,j0,k0)*(1.-xd) + phi(i1,j0,k0)*xd
+   c10 = phi(i0,j1,k0)*(1.-xd) + phi(i1,j1,k0)*xd
+   c01 = phi(i0,j0,k1)*(1.-xd) + phi(i1,j0,k1)*xd
+   c11 = phi(i0,j1,k1)*(1.-xd) + phi(i1,j1,k1)*xd
+
+   c0 = c00*(1.-yd)+c10*yd
+   c1 = c01*(1.-yd)+c11*yd
+
+   phiSurf(n) = c0*(1.-zd)+c1*zd
+
+   c00 = gradPhi(i0,j0,k0,1)*(1.-xd) + gradPhi(i1,j0,k0,1)*xd
+   c10 = gradPhi(i0,j1,k0,1)*(1.-xd) + gradPhi(i1,j1,k0,1)*xd
+   c01 = gradPhi(i0,j0,k1,1)*(1.-xd) + gradPhi(i1,j0,k1,1)*xd
+   c11 = gradPhi(i0,j1,k1,1)*(1.-xd) + gradPhi(i1,j1,k1,1)*xd
+
+   c0 = c00*(1.-yd)+c10*yd
+   c1 = c01*(1.-yd)+c11*yd
+
+   gradPhiSurf(n,1) = -(c0*(1.-zd)+c1*zd)
+
+   c00 = gradPhi(i0,j0,k0,2)*(1.-xd) + gradPhi(i1,j0,k0,2)*xd
+   c10 = gradPhi(i0,j1,k0,2)*(1.-xd) + gradPhi(i1,j1,k0,2)*xd
+   c01 = gradPhi(i0,j0,k1,2)*(1.-xd) + gradPhi(i1,j0,k1,2)*xd
+   c11 = gradPhi(i0,j1,k1,2)*(1.-xd) + gradPhi(i1,j1,k1,2)*xd
+
+   c0 = c00*(1.-yd)+c10*yd
+   c1 = c01*(1.-yd)+c11*yd
+
+   gradPhiSurf(n,2) = -(c0*(1.-zd)+c1*zd)
+ 
+   c00 = gradPhi(i0,j0,k0,3)*(1.-xd) + gradPhi(i1,j0,k0,3)*xd
+   c10 = gradPhi(i0,j1,k0,3)*(1.-xd) + gradPhi(i1,j1,k0,3)*xd
+   c01 = gradPhi(i0,j0,k1,3)*(1.-xd) + gradPhi(i1,j0,k1,3)*xd
+   c11 = gradPhi(i0,j1,k1,3)*(1.-xd) + gradPhi(i1,j1,k1,3)*xd
+
+   c0 = c00*(1.-yd)+c10*yd;
+   c1 = c01*(1.-yd)+c11*yd;
+
+   gradPhiSurf(n,3) = -(c0*(1.-zd)+c1*zd)
+   
+   gradMag2 = gradPhiSurf(n,1)*gradPhiSurf(n,1)+gradPhiSurf(n,2)*gradPhiSurf(n,2)+gradPhiSurf(n,3)*gradPhiSurf(n,3)
+
+   IF (gradMag2 < 1.E-7) THEN
+      gradPhiMag = 0.
+      gradPhiSurf(n,1) = 0.
+      gradPhiSurf(n,2) = 0.
+      gradPhiSurf(n,3) = 0.
+   ELSE
+      gradPhiMag = sqrt(gradMag2)
+      gradPhiSurf(n,1) = gradPhiSurf(n,1)/gradPhiMag
+      gradPhiSurf(n,2) = gradPhiSurf(n,2)/gradPhiMag
+      gradPhiSurf(n,3) = gradPhiSurf(n,3)/gradPhiMag
+   END IF
+
+END DO
+
+END SUBROUTINE setPhiSurf
+
+!*************************************************************************************!
+! Get equally spaced points in the unit equilateral triangle
+!*************************************************************************************!
+
+SUBROUTINE equiTriPts(order,nsp,rs)
+
+INTEGER,INTENT(IN   ) :: order,nsp
+REAL   ,INTENT(  OUT),DIMENSION(2,nsp) :: rs
+INTEGER :: i,j,m
+REAL :: L0,L1,dL
+REAL,DIMENSION(2,nsp) :: rsT
+INTEGER,DIMENSION(nsp) :: key
+
+
+! equally spaced points in the unit equilateral triangle
+! with numbering consistent with gmesh format
+
+IF (order == 0) THEN
+   rs(1,1) = 0.
+   rs(2,1) = 0.
+ELSE IF (order > 5) THEN
+   WRITE(*,*)'*** Please choose order < 6 in equiTriPts.f90 ***'
+   STOP
+ELSE
+   dL = 1./REAL(order)
+   m  = 0
+   DO i=0,order
+      L0 = REAL(i)*dL
+      DO j=0,order-i
+         L1       = REAL(j)*dL
+         m        = m+1
+         rsT(1,m) = L1-L0
+         rsT(2,m) =(2.-3.*(L0+L1))/SQRT(3.)
+        ! print*, rst(1,m),rst(2,m)
+      END DO
+   END DO
+
+   ! order consistent with gmesh format
+   IF      (order == 1) THEN
+      key(1)  = 3
+      key(2)  = 2
+      key(3)  = 1
+   ELSE IF (order  == 2) THEN
+      key(1)  = 6
+      key(2)  = 3
+      key(3)  = 1
+      key(4)  = 5
+      key(5)  = 2
+      key(6)  = 4
+   ELSE IF (order == 3) THEN
+      key(1)  = 10
+      key(2)  = 4
+      key(3)  = 1
+      key(4)  = 9
+      key(5)  = 7
+      key(6)  = 3
+      key(7)  = 2
+      key(8)  = 5
+      key(9)  = 8
+      key(10) = 6
+   ELSE IF (order == 4) THEN
+      key(1)  = 15
+      key(2)  = 5
+      key(3)  = 1
+      key(4)  = 14
+      key(5)  = 12
+      key(6)  = 9
+      key(7)  = 4
+      key(8)  = 3
+      key(9)  = 2
+      key(10) = 6
+      key(11) = 10
+      key(12) = 13
+      key(13) = 11
+      key(14) = 8
+      key(15) = 7
+   ELSE IF (order == 5) THEN
+      key(1)  = 21
+      key(2)  = 6
+      key(3)  = 1
+      key(4)  = 20
+      key(5)  = 18
+      key(6)  = 15
+      key(7)  = 11
+      key(8)  = 5
+      key(9)  = 4
+      key(10) = 3
+      key(11) = 2
+      key(12) = 7
+      key(13) = 12
+      key(14) = 16
+      key(15) = 19
+      key(16) = 17
+      key(17) = 10
+      key(18) = 8
+      key(19) = 14
+      key(20) = 9
+      key(21) = 13
+   END IF
+
+   ! change numbering
+   DO i=1,nsp
+      rs(1,i) = rsT(1,key(i))
+      rs(2,i) = rsT(2,key(i))
+   END DO
+END IF
+
+
+END SUBROUTINE equiTriPts
+
+!*************************************************************************************!
 !
 ! Module End
 !
