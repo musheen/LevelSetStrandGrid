@@ -18,5 +18,5 @@ Couple of notes:
 - Currently uses uniform grid spacing. 
 - If you want to only run the signed distance function part, set the min/max iterations to zero. 
 - The .stl files need to be clean. No pierced faces or dirty CAD.
-- Currently uses .stl only right now. I would love to add in other CAD file types, but not a priority currently.
+- Currently uses .stl only right now.
 
